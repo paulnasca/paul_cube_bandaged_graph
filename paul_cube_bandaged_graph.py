@@ -12,6 +12,7 @@
 import os
 import sys
 import csv
+import re
 import pydot
 import numpy as np
 import tempfile
@@ -51,6 +52,9 @@ FACE_COLORS = {
 }
 UNKNOWN_FACE_EDGE_COLOR = "#8020a0"
 
+# TODO: add better passing of the configuration from the command line
+# to the lower level functions (like draw_svg_cube for the "cube_draw_projection")
+
 
 def explore_cube(cube):
     """
@@ -71,20 +75,20 @@ def explore_cube(cube):
 
 def draw_svg_cube(
     svg_filename,
-    cube_size,
+    cube_order,
     cube,
     image_size,
     color_mode="white",
     label=None,
-    cube_mode="cube_map",
+    cube_draw_projection="cube_map",
 ):
     """
     Draw a bandaged NxNxN cube in svg format.
 
     Args:
          svg_filename: output file path of the image
-         cube_size: the cube order (example: 3 for a 3x3x3 cube)
-         cube: the bandaged cube in array[cube_size * cube_size * cube_size]
+         cube_order: the cube order (example: 3 for a 3x3x3 cube)
+         cube: the bandaged cube in array[cube_order * cube_order * cube_order]
          image_size: output cube image size in units
          color_mode: how the colors are drawn
              The color_mode can be:
@@ -92,8 +96,7 @@ def draw_svg_cube(
                 "center" - only the center (and the cubies connected to the centers) are coloured
                 "full"   - the whole faces are drawn with the face color
          label: cube label
-         cube_mode: the mode of the cube drawing (as 2d faces, 3d cube, etc)
-             The only cube_mode implemented is "cube_map" which draws the faces as 2d. 
+         cube_draw_projection: the projection of the cube drawing ("cube_map", "isometric")
     """
     global FACE_COLORS
     CUBE_MODES = {
@@ -113,18 +116,33 @@ def draw_svg_cube(
             "image_size_x_multiplier": 1.0,
             "image_size_y_multiplier": 0.75,
         },
-        # add more cube modes here (like ortographic projection using svg transforms of the cube faces)
+        "isometric": {
+            "transforms": {
+                "U": "scale(0.3) translate(0.8,0) scale(1,0.58) rotate(45) rotate(-90,0.5,0.5)",
+                "L": "scale(0.3) translate(0.8,0.82) rotate(60) scale(1,0.58) rotate(45) rotate(-90,0.5,0.5)",
+                "F": "scale(0.3) translate(0.8,0.82) rotate(-60) scale(1,0.58) rotate(45)",
+                "D": "scale(0.3) translate(2.41,0.82) scale(1,0.58) rotate(45) rotate(180,0.5,0.5)",
+                "R": "scale(0.3) translate(2.41,0.82) rotate(120) scale(1,0.58) rotate(45) rotate(180,0.5,0.5)",
+                "B": "scale(0.3) translate(2.41,0.82) rotate(-120) scale(1,0.58) rotate(45) rotate(90,0.5,0.5)",
+            },
+            "label_pos_x": 0.5,
+            "label_pos_y": 0.63,
+            "label_size": 0.17,
+            "label_anchor": "middle",
+            "image_size_x_multiplier": 1.0,
+            "image_size_y_multiplier": 0.65,
+        },
     }
-    current_cube_mode = CUBE_MODES[cube_mode]
+    current_projection = CUBE_MODES[cube_draw_projection]
     dwg = svgwrite.Drawing(svg_filename, profile="tiny")
 
-    stroke_width = 0.05 * cube_size
+    stroke_width = 0.05 * cube_order
     g1 = svgwrite.container.Group(
         transform="scale({}) translate({})".format(
-            image_size, stroke_width * 0.25 / cube_size
+            image_size, stroke_width * 0.25 / cube_order
         )
     )
-    cube_np = np.reshape(cube, (cube_size, cube_size, cube_size))
+    cube_np = np.reshape(cube, (cube_order, cube_order, cube_order))
 
     faces = {
         "L": cube_np[:, :, 0],
@@ -137,9 +155,9 @@ def draw_svg_cube(
     # draw the faces
     for face_name, face in faces.items():
         face = faces[face_name]
-        transforms = current_cube_mode["transforms"]
+        transforms = current_projection["transforms"]
         grp = svgwrite.container.Group(
-            transform=transforms[face_name] + " scale({})".format(1.0 / cube_size)
+            transform=transforms[face_name] + " scale({})".format(1.0 / cube_order)
         )
 
         # draw full face center
@@ -147,7 +165,7 @@ def draw_svg_cube(
             grp.add(
                 dwg.rect(
                     (0, 0),
-                    (cube_size, cube_size),
+                    (cube_order, cube_order),
                     fill=FACE_COLORS[face_name],
                     stroke_width=stroke_width / 2.0,
                     stroke=FACE_COLORS[face_name],
@@ -155,14 +173,14 @@ def draw_svg_cube(
             )
 
         # draw face center colors for odd size cubes
-        if cube_size % 2 == 1 and color_mode == "center":
-            center_pos = (cube_size - 1) // 2
+        if cube_order % 2 == 1 and color_mode == "center":
+            center_pos = (cube_order - 1) // 2
             center_group = face[center_pos][center_pos]
         else:
             center_group = -1
             center_pos = -1
-        for y in range(0, cube_size):
-            for x in range(0, cube_size):
+        for y in range(0, cube_order):
+            for x in range(0, cube_order):
                 if (center_group != 0 and face[y][x] == center_group) or (
                     x == center_pos and y == center_pos
                 ):
@@ -177,9 +195,9 @@ def draw_svg_cube(
                     )
 
         # draw the square separations (for non bandage squares)
-        for y in range(0, cube_size):
-            for x in range(0, cube_size):
-                if (x < (cube_size - 1)) and (
+        for y in range(0, cube_order):
+            for x in range(0, cube_order):
+                if (x < (cube_order - 1)) and (
                     face[y][x + 1] == 0 or (face[y][x + 1] != face[y][x])
                 ):
                     grp.add(
@@ -190,7 +208,7 @@ def draw_svg_cube(
                             stroke_width=stroke_width,
                         )
                     )
-                if (y < (cube_size - 1)) and (
+                if (y < (cube_order - 1)) and (
                     face[y + 1][x] == 0 or (face[y + 1][x] != face[y][x])
                 ):
                     grp.add(
@@ -206,7 +224,7 @@ def draw_svg_cube(
         grp.add(
             dwg.rect(
                 (0, 0),
-                (cube_size, cube_size),
+                (cube_order, cube_order),
                 fill="none",
                 stroke="black",
                 stroke_width=stroke_width * 1.5,
@@ -219,10 +237,10 @@ def draw_svg_cube(
 
     # draw cube label
     if label:
-        label_pos_x = current_cube_mode["label_pos_x"]
-        label_pos_y = current_cube_mode["label_pos_y"]
-        label_anchor = current_cube_mode["label_anchor"]
-        label_size = current_cube_mode["label_size"]
+        label_pos_x = current_projection["label_pos_x"]
+        label_pos_y = current_projection["label_pos_y"]
+        label_anchor = current_projection["label_anchor"]
+        label_size = current_projection["label_size"]
 
         dwg.add(
             dwg.text(
@@ -235,10 +253,10 @@ def draw_svg_cube(
             )
         )
 
-    label_pos_x = current_cube_mode["label_pos_x"]
-    label_pos_y = current_cube_mode["label_pos_y"]
-    dwg["height"] = str(image_size * 0.75)
-    dwg["width"] = str(image_size)
+    label_pos_x = current_projection["label_pos_x"]
+    label_pos_y = current_projection["label_pos_y"]
+    dwg["height"] = str(image_size * current_projection["image_size_y_multiplier"])
+    dwg["width"] = str(image_size * current_projection["image_size_x_multiplier"])
     dwg.save(pretty=True)
 
 
@@ -317,6 +335,34 @@ def convert_hex_signature_to_bandage_array(signature_hex):
     return cube_as_list
 
 
+def convert_cube_signature_to_bandage_array(cube_text):
+    """
+    Automatically detect the cube format signature (either hex or in list format)
+    and return the cube in array[27] format
+    If the cube is in the list format the separators between numbers can 
+    be ".", ",", ";" and/or  space(s).
+    example input string:
+    "33EC01800846"
+    or
+    "3.4.5,6.1.2,7.1.2, 3.4.5,6.1.8,7.1.8, 9.9.0,10.10.11,12.12.11"
+    """
+    cube_text = cube_text.strip()
+    cube_text_items = [m for m in re.split("\.|,|;| ", cube_text) if m]
+    cube = None
+    if len(cube_text_items) == 1:
+        # hex signature
+        cube_hex_signature = cube_text_items[0]
+        cube = convert_hex_signature_to_bandage_array(cube_hex_signature)
+
+    if len(cube_text_items) == 27:
+        # cube in list format
+        cube = [int(m) for m in cube_text_items]
+
+    if not cube:
+        raise ValueError("Could not recognize cube format:" + cube_text)
+    return cube
+
+
 def invert_tuple_list_to_dict(tuple_list):
     """
     Make a dictionary from the list of tuples where the second item every tuple is considered as key and the first item of every tuple is added to the value array
@@ -388,7 +434,12 @@ def separate_nodes_by_categories(graph, max_number_nodes_per_category):
 
 
 def process_nodes(
-    graph, i2c, svg_filename_prefix, nodes_degree_categories, nodes_degrees_inv
+    graph,
+    i2c,
+    svg_filename_prefix,
+    nodes_degree_categories,
+    nodes_degrees_inv,
+    cube_draw_projection,
 ):
     """
        Process the graph nodes and set their attributes for graphviz
@@ -399,6 +450,7 @@ def process_nodes(
            svg_filename_prefix: the file prefix of the generated SVG files
            nodes_degree_categories: a dictionary where the keys are the node degree and the value is the category name for that degree
            nodes_degrees_inv: a dictionary where the keys are the node degree and the values a list of all nodes with that degree
+           cube_draw_projection: the cube projection for drawing
 
        Returns:
           None but it modifies the graph
@@ -459,10 +511,11 @@ def process_nodes(
         cube = i2c[k_node]
         draw_svg_cube(
             svg_filename=svg_filename,
-            cube_size=3,
+            cube_order=3,
             cube=cube,
             image_size=image_size,
             color_mode="center",
+            cube_draw_projection=cube_draw_projection,
         )
         nx.set_node_attributes(graph, {k_node: {"image": svg_filename}})
 
@@ -502,7 +555,12 @@ def process_edges(graph, edge_labels, show_labels=True, show_arrows=True):
 
 
 def draw_legend(
-    dot_graph, svg_filename_prefix, nodes_degree_categories, nodes_degrees_inv, i2c
+    dot_graph,
+    svg_filename_prefix,
+    nodes_degree_categories,
+    nodes_degrees_inv,
+    i2c,
+    cube_draw_projection,
 ):
     """
     Draw the graph legend with the cube starting position and the index for the cubes which are "circle_with_label"
@@ -512,6 +570,7 @@ def draw_legend(
       nodes_degree_categories: a dictionary where the keys are the node degree and the value is the category name for that degree
       nodes_degrees_inv: a dictionary where the keys are the node degree and the values a list of all nodes with that degree
       i2c: the dictionary with the cube representation where the key is the node number and the value is the cube array
+      cube_draw_projection: the cube projection for drawing
 
     Returns: None
     """
@@ -548,11 +607,12 @@ def draw_legend(
                 cube = i2c[index_node]
                 draw_svg_cube(
                     svg_filename=index_node_filename,
-                    cube_size=3,
+                    cube_order=3,
                     cube=cube,
                     image_size=image_size,
                     color_mode="center",
                     label=str(index_node),
+                    cube_draw_projection=cube_draw_projection,
                 )
                 html_index_table += [
                     "<td><img src='{}'/></td>".format(index_node_filename)
@@ -571,11 +631,13 @@ def draw_legend(
     node_filename = svg_filename_prefix + "start.svg"
     draw_svg_cube(
         svg_filename=node_filename,
-        cube_size=3,
+        cube_order=3,
         cube=i2c[0],
         image_size=image_size * 3,
         color_mode="full",
+        cube_draw_projection=cube_draw_projection,
     )
+
     start_node = pydot.Node(
         "start", shape="none", label="", rank="min", image=node_filename
     )
@@ -594,6 +656,7 @@ def draw_cube_graph(
     output_filename,
     skip_legend_draw,
     output_temporary_folder=None,
+    cube_draw_projection=None,
 ):
     """
     Draw the cube graph and the legend
@@ -605,6 +668,7 @@ def draw_cube_graph(
         output_filename: the file output (tested with extensions ".svg", ".png", ".pdf")
         skip_legend_draw: the the legend is not being drawn
         output_temporary_folder: if set to a string, it ouputs the temporary svg files and saves the dot files to that directory. If False no temporary files are kept
+        cube_draw_projection: the cube projection for drawing
 
     WARNING:
         If the legend is being drawn (skip_legend_draw is False) and the graph is very complex (like more than few tousands of nodes) the graph in the final image is will be empty
@@ -616,9 +680,9 @@ def draw_cube_graph(
 
     """
     nodes, edges, labels, i2c = explored_cube
-    
+
     if not skip_legend_draw and len(nodes) > 10000:
-        # more information about this issue is documented into the code below 
+        # more information about this issue is documented into the code below
         print(
             "Warning(bug): it is very likely to get empty graph image if skip_legend_draw is false on larger graphs. If you get this issue, as a workaround, enable skip_legend_draw"
         )
@@ -636,7 +700,12 @@ def draw_cube_graph(
         g, MAX_NUMBER_OF_NODES_PER_CATEGORY
     )
     process_nodes(
-        g, i2c, tmp_file_prefix + "_node_", nodes_degree_categories, nodes_degrees_inv
+        g,
+        i2c,
+        tmp_file_prefix + "_node_",
+        nodes_degree_categories,
+        nodes_degrees_inv,
+        cube_draw_projection,
     )
     process_edges(
         g, labels, len(edges) <= SHOW_EDGE_LABELS_MAX, len(edges) < SHOW_EDGE_ARROWS_MAX
@@ -682,6 +751,7 @@ def draw_cube_graph(
             nodes_degree_categories,
             nodes_degrees_inv,
             i2c,
+            cube_draw_projection,
         )
         dot_index_attributes = dot_index.get_attributes()
         dot_index_attributes["layout"] = "dot"
@@ -742,6 +812,7 @@ def process_csv_file(
     filter_by_number_of_nodes=None,
     skip_cubes_without_names=False,
     skip_legend_draw=False,
+    cube_draw_projection=None,
 ):
     """
       process the csv file 
@@ -760,6 +831,7 @@ def process_csv_file(
         filter_by_number_of_nodes is a tuple of (min_nodes, max_nodes) for skipping processing of the cubes from the csv file
         skip_cubes_without_names: skip cubes without names
         skip_legend_draw: skip drawing of the legend for all cubes
+        cube_draw_projection: the cube projection for drawing
     """
     with open(csv_file_name, "r") as f:
         csv_list = list(csv.reader(f))
@@ -784,9 +856,9 @@ def process_csv_file(
                 cube_E = 0
 
             try:
-                cube = convert_hex_signature_to_bandage_array(cube_signature)
+                cube = convert_cube_signature_to_bandage_array(cube_signature)
             except ValueError:
-                print(" hex signature error:", cube_signature)
+                print(" cube signature error:", cube_signature)
                 continue
 
             explored_cube = None
@@ -831,19 +903,23 @@ def process_csv_file(
                 cube_label,
                 output_filename,
                 skip_legend_draw=skip_legend_draw,
+                cube_draw_projection=cube_draw_projection,
             )
 
 
-def process_single_cube(cube_signature, output_filename, skip_legend_draw=False):
+def process_single_cube(
+    cube_signature, output_filename, skip_legend_draw, cube_draw_projection
+):
     """
     Process a single cube signature
     Args:
        cube_signature: the cube signature
        output_filename: the filename of the generated image
        skip_legend_draw: the the legend is not drawn
+       cube_draw_projection: the cube projection for drawing
     """
     try:
-        cube = convert_hex_signature_to_bandage_array(cube_signature)
+        cube = convert_cube_signature_to_bandage_array(cube_signature)
     except ValueError:
         print("hex signature error:", cube_signature)
         return
@@ -859,11 +935,16 @@ def process_single_cube(cube_signature, output_filename, skip_legend_draw=False)
         cube_label,
         output_filename,
         skip_legend_draw=skip_legend_draw,
+        cube_draw_projection=cube_draw_projection,
     )
 
 
 def process_cube_list(
-    cube_signature_list, output_directory, file_format, skip_legend_draw
+    cube_signature_list,
+    output_directory,
+    file_format,
+    skip_legend_draw,
+    cube_draw_projection,
 ):
     """
     Process a list of cube signature
@@ -872,6 +953,7 @@ def process_cube_list(
        output_directory: the output_directory
        file_format: the file extension ("png" or "pdf")
        skip_legend_draw: the the legend is not drawn
+       cube_draw_projection: the cube projection for drawing
     """
     os.makedirs(output_directory, exist_ok=True)
     for cube_signature in cube_signature_list:
@@ -879,7 +961,9 @@ def process_cube_list(
             output_directory, "{}.{}".format(cube_signature, file_format)
         )
         print("Processing cube {}, file: {}".format(cube_signature, output_filename))
-        process_single_cube(cube_signature, output_filename, skip_legend_draw)
+        process_single_cube(
+            cube_signature, output_filename, skip_legend_draw, cube_draw_projection
+        )
 
 
 if __name__ == "__main__":
@@ -900,7 +984,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--process_csv_file", help="process a csv file containing cube signature"
+        "--cube_draw_projection",
+        default="cube_map",
+        choices=["isometric", "cube_map"],
+        help="The cube drawing projection.",
+    )
+    parser.add_argument(
+        "--process_csv_file", help="process a csv file containing hex cube signatures"
     )
     parser.add_argument(
         "--skip_cubes_without_names",
@@ -914,7 +1004,7 @@ if __name__ == "__main__":
         help="process only cubes with number of nodes in range min-max. Example: 100-500  or  0-10000",
     )
 
-    parser.add_argument("cube_signatures", nargs="*", help="cube hex signatures")
+    parser.add_argument("cube_signatures", nargs="*", help="cube hex or array[27] signatures")
 
     args = parser.parse_args()
 
@@ -924,6 +1014,7 @@ if __name__ == "__main__":
             args.output_directory,
             args.file_format,
             args.skip_legend_draw,
+            args.cube_draw_projection,
         )
     if args.process_csv_file:
         print("Processing csv file", args.process_csv_file)
@@ -940,6 +1031,7 @@ if __name__ == "__main__":
             filter_by_number_of_nodes,
             args.skip_cubes_without_names,
             args.skip_legend_draw,
+            args.cube_draw_projection,
         )
     if len(sys.argv) < 2:
-       parser.print_usage()
+        parser.print_usage()
