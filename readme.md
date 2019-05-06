@@ -28,30 +28,38 @@ Example images
 
 
 Over 100 bandage cubes:[PDF](images/some_named_bandaged_cubes.pdf)
+Several isometric cubes:[PDF](images/some_isometric_drawings.pdf)
 
 Over 2000 bandage cubes in a [250MB archive of pdf](https://drive.google.com/file/d/1SLcX1A35xX8fnC6Do4t7JdjtlQFfSqO1/view?usp=sharing).
+
+Another large [archive with almost 3000](https://drive.google.com/file/d/1Ro7-i6LEaqVpmWsyp3mSQUPxy_7sKCtq/view?usp=sharing) bandage cubes with isometric drawing of the cubes is available.
 
 Example usage
 =============
 
 Detailed help:
 ```
-python paul_cube_bandaged_graph.py -h
+python3 paul_cube_bandaged_graph.py -h
 ```
 
 To generate pdf images of several bandaged cubes (Meffert Bicube and Equator cube):
 ```
-paul_cube_bandaged_graph.py --file_format pdf 33EC01800846 300C0000000C03
+python3 paul_cube_bandaged_graph.py --file_format pdf 33EC01800846 300C0000000C03
 ```
 
 To generate SVG image of cab5-5 cube:
 ```
-paul_cube_bandaged_graph.py --file_format svg --skip_legend_draw 22006F100000C6
+python3 paul_cube_bandaged_graph.py --file_format svg --skip_legend_draw 22006F100000C6
 ```
 
-To generate pdf for all named bandage cubes where the graph has less then 1000 nodes from the csv file:
+To generate pdf for all named bandage cubes where the graph has less then 10000 nodes from the csv file:
 ```
-paul_cube_bandaged_graph.py --process_csv_file all_cubes.csv --file_format pdf  --skip_cubes_without_names --filter_by_number_of_nodes 0-1000 
+python3 paul_cube_bandaged_graph.py --process_csv_file all_cubes.csv --file_format pdf  --skip_cubes_without_names --filter_by_number_of_nodes 0-10000 
+```
+
+To generate isometric drawing of all bandaged cubes where the graph has less than 2000 nodes from the csv file:
+```
+python3 paul_cube_bandaged_graph.py --cube_draw_projection isometric --filter_by_number_of_nodes 0-2000 --process_csv_file all_cubes.csv --file_format pdf
 ```
 
 
