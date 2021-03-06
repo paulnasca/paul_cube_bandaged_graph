@@ -323,7 +323,8 @@ def convert_hex_signature_to_bandage_array(signature_hex):
         if signature_bin[k]
     ]
 
-    subgraphs = nx.connected_component_subgraphs(nx.Graph(connections))
+    connections_graph = nx.Graph(connections)
+    subgraphs = (connections_graph.subgraph(m).copy() for m in nx.connected_components(connections_graph))
 
     cube = np.zeros((3, 3, 3), dtype=np.int32, order="c")
     for k, sg in enumerate(subgraphs):
